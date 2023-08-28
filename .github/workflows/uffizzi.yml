@@ -134,11 +134,35 @@ jobs:
           https://docs.uffizzi.com/install
         edit-mode: replace
 
+    - name: Setup binary
+      uses: UffizziCloud/setup-action@main
+
     - name: Connect to Virtual Cluster
-      uses: UffizziCloud/cluster-action@main
-      with:
-        cluster-name: pr-${{ github.event.pull_request.number }}
-        server: https://app.uffizzi.com
+      env:
+        CLUSTER_NAME: pr-${{ github.event.pull_request.number }}
+      run: |
+        export UFFIZZI_SERVER="https://app.uffizzi.com"
+        export UFFIZZI_USER="andrew.beveridge@wise.com"
+        export UFFIZZI_PASSWORD=${{ secrets.UFFIZZI_PASSWORD }}
+        ./uffizzi-linux login
+        # Identify if a Cluster for this PR exists.
+        if ./uffizzi-linux cluster list | grep --quiet "${{ env.CLUSTER_NAME }}$"
+        then
+          ./uffizzi-linux cluster update-kubeconfig "${{ env.CLUSTER_NAME }}" --kubeconfig kubeconfig
+        else
+          ./uffizzi-linux cluster create --name "${{ env.CLUSTER_NAME }}" --kubeconfig kubeconfig
+
+          echo "Uffizzi Cluster \`${{ env.CLUSTER_NAME }}\` created." | tee --append $GITHUB_STEP_SUMMARY
+          export KUBERNETES_SERVICE_HOST=`yq '.clusters[0].cluster.server' < ./kubeconfig | cut -d'/' -f3`
+          echo "Available at \`${KUBERNETES_SERVICE_HOST}\`." | tee --append $GITHUB_STEP_SUMMARY
+          echo "You can access this cluster with a command like \`uffizzi cluster update-kubeconfig ${UFFIZZI_CLUSTER} --kubeconfig=/tmp/kubeconfig\`" | tee --append $GITHUB_STEP_SUMMARY
+          echo "and then \`kubectl --kubeconfig /tmp/kubeconfig\` or similar." | tee --append $GITHUB_STEP_SUMMARY
+          sleep 3
+        fi
+
+        mv --no-clobber ./kubeconfig "${{ github.workspace }}/kubeconfig"
+        echo "kubeconfig file at ${{ github.workspace }}/kubeconfig"
+
 
     - name: Kustomize and Apply Manifests
       id: prev
